@@ -10,6 +10,10 @@ WebSocket で Bybit の約定履歴を受信して、1分足のチャートを�
 + 一定期間で大量の取引があれば音を出す。
 + 清算データもリアルタイムで取得・表示する。
 
+### 不具合
++ チャートがちらつく。
++ 縮尺が維持できない。
+
 ## Demo
 [https://noitaro.github.io/clone-inago-demo/](https://noitaro.github.io/clone-inago-demo/)
 
