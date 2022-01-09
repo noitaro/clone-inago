@@ -1,4 +1,4 @@
 module.exports = {
-    publicPath: '/clone-inago/',
+    publicPath: '/clone-inago-demo/',
     outputDir: 'docs'
 }
