@@ -1,137 +1,116 @@
 <template>
   <trading-vue
-    :data="this.$data"
+    :data="chart"
     :width="this.width"
     :height="this.height"
+    :index_based="this.index_based"
     ref="tradingVue"
   ></trading-vue>
 </template>
 
 <script>
-import TradingVue from "trading-vue-js";
-
-const name = "localdb";
-const version = "1.0";
-const description = "Web SQL Database";
-const size = 2 * 1024 * 1024;
-let db = openDatabase(name, version, description, size);
-
-db.transaction((tx) => {
-  tx.executeSql("DROP TABLE IF EXISTS trade;");
-  tx.executeSql(
-    "CREATE TABLE IF NOT EXISTS trade (id INTEGER, price INTEGER, side TEXT, size INTEGER, timestamp TEXT);"
-  );
-});
-
-// Create WebSocket connection.
-const socket = new WebSocket("wss://stream.bybit.com/realtime");
-
-// Connection opened
-socket.addEventListener("open", () => {
-  console.log("TradingVue: addEventListener(open)");
-  socket.send(JSON.stringify({ op: "subscribe", args: ["trade"] }));
-});
-
-// Listen for messages
-socket.addEventListener("message", onMessage);
-
-function onMessage(event) {
-  console.log("TradingVue: onMessage");
-  const obj = JSON.parse(event.data);
-  if (obj.topic == "trade.BTCUSD") {
-    obj.data.forEach((element) => {
-      //   console.log("Message from server ", element);
-      db.transaction((tx) =>
-        tx.executeSql(
-          "INSERT INTO trade (id, price, side, size, timestamp) VALUES (?, ?, ?, ?, ?)",
-          [
-            element.cross_seq,
-            element.price,
-            element.side,
-            element.size,
-            element.timestamp,
-          ]
-        )
-      );
-    });
-  }
-}
+import { TradingVue, DataCube } from "trading-vue-js";
 
 export default {
   name: "app",
   components: { TradingVue },
   data() {
     return {
-      ohlcv: [],
+      chart: {},
       width: window.innerWidth,
       height: window.innerHeight,
+      index_based: false,
     };
   },
   mounted() {
     console.log("TradingVue: mounted");
     window.addEventListener("resize", this.onResize);
     this.onResize();
+
+    this.load_chunk();
+
+    this.chart = new DataCube(
+      {
+        ohlcv: [
+          [1643535000, 1000, 1000, 1000, 1000, 100],
+          [1643535060, 1000, 1000, 1000, 1000, 100],
+          [1643535120, 1000, 1000, 1000, 1000, 100],
+        ],
+        onchart: [
+          {
+            type: "EMAx6",
+            name: "Multiple EMA",
+            data: [],
+          },
+        ],
+        offchart: [
+          {
+            type: "BuySellBalance",
+            name: "Buy/Sell Balance, $lookback",
+            data: [],
+            settings: {},
+          },
+        ],
+        datasets: [
+          {
+            type: "Trades",
+            id: "binance-btcusdt",
+            data: [],
+          },
+        ],
+      },
+      { aggregation: 100 }
+    );
+
     this.$refs.tradingVue.resetChart();
-    setInterval(this.fetchEventsList, 1000);
+
+    setTimeout(() => {
+      this.chart.update({
+        t: 1643535180, // Exchange time (optional)
+        price: parseFloat(1000), // Trade price
+        volume: parseFloat(100), // Trade amount
+        "datasets.binance-btcusdt": [
+          // Update dataset
+          1643535180,
+          0, // Sell or Buy
+          parseFloat(100),
+          parseFloat(1000),
+        ],
+        // ... other onchart/offchart updates
+      });
+    }, 0);
   },
   methods: {
     onResize() {
       this.width = window.innerWidth;
       this.height = window.innerHeight - 3;
     },
-    fetchEventsList() {
-      //   console.log("TradingVue: fetchEventsList");
-      let ohlcv = [];
-      db.transaction((trans) => {
-        trans.executeSql(
-          "SELECT " +
-            "    timestamp " +
-            "    , (SELECT price FROM trade WHERE id = min_id) AS open " +
-            "    , high " +
-            "    , low " +
-            "    , (SELECT price FROM trade WHERE id = max_id) AS close " +
-            "    , volume " +
-            "FROM " +
-            "    ( " +
-            "        SELECT " +
-            "            timestamp " +
-            "            , MAX(id) AS max_id " +
-            "            , MIN(id) AS min_id " +
-            "            , MAX(price) AS high " +
-            "            , MIN(price) AS low " +
-            "            , ROUND(SUM(size), 2) AS volume " +
-            "        FROM " +
-            "            trade " +
-            "        GROUP BY " +
-            "            strftime('%Y%m%d%H%M', timestamp) " +
-            "    ); ",
-          [],
-          (trans, r) => {
-            // eslint-disable-line no-unused-vars
-            // console.log(r.rows);
-            for (let i = 0; i < r.rows.length; i++) {
-              const dt = new Date(r.rows.item(i).timestamp);
-              const date = new Date(
-                dt.getFullYear(),
-                dt.getMonth(),
-                dt.getDay(),
-                dt.getHours(),
-                dt.getMinutes()
-              );
-              ohlcv.push([
-                date.getTime(),
-                r.rows.item(i).open,
-                r.rows.item(i).high,
-                r.rows.item(i).low,
-                r.rows.item(i).close,
-                r.rows.item(i).volume,
-              ]);
-            }
-          }
-        );
+    async load_chunk() {
+      const url =
+        "https://us-central1-clone-inago.cloudfunctions.net/helloWorld?symbol=BTCUSD&interval=1&limit=2&from=1581231260";
+      const request = require("request-promise");
+      var options = {
+        url: url,
+        method: "GET",
+      };
+      var aa = await request(options);
+      console.log(aa);
+      // const res = await fetch(url, { mode: "cors" }).then((r) => r.json());
+      // return this.format(this.parse_binance(res));
+    },
+    parse_binance(data) {
+      if (!Array.isArray(data)) return [];
+      return data.map((x) => {
+        for (var i = 0; i < x.length; i++) {
+          x[i] = parseFloat(x[i]);
+        }
+        return x.slice(0, 6);
       });
-      
-      this.ohlcv = ohlcv;
+    },
+    format(data) {
+      return {
+        "chart.data": data,
+      };
     },
   },
 };
